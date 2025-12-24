@@ -51,12 +51,12 @@ import {
 
 // --- ZONA DE CONFIGURACIÓN (¡VUELVE A PEGAR TUS CLAVES AQUÍ!) ---
 const firebaseConfig = {
-  apiKey: "PEGA_TU_API_KEY_AQUI",
-  authDomain: "midasbets-app.firebaseapp.com",
-  projectId: "midasbets-app",
-  storageBucket: "midasbets-app.firebasestorage.app", 
-  messagingSenderId: "PEGA_TU_SENDER_ID_AQUI",
-  appId: "PEGA_TU_APP_ID_AQUI"
+  apiKey: 'AIzaSyDZa4uoO24GWvcxLh0MVxfPt2l0hNBn4yI',
+  authDomain: 'midasbets-app.firebaseapp.com',
+  projectId: 'midasbets-app',
+  storageBucket: 'midasbets-app.firebasestorage.app',
+  messagingSenderId: '359773148824',
+  appId: '1:359773148824:web:aca2e50d206d82779262ed',
 };
 
 // --- NO TOCAR NADA DEBAJO DE ESTA LÍNEA ---
@@ -167,7 +167,7 @@ const App = () => {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (adminPass === 'MIDAS') { 
+    if (adminPass === 'K9#mP2$xL7@vQ4!z') { 
       setIsAdmin(true);
       setShowLoginModal(false);
       setAdminPass('');
