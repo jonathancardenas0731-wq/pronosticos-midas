@@ -53,12 +53,12 @@ import {
 
 // --- ZONA DE CONFIGURACIÓN (¡VUELVE A PEGAR TUS CLAVES AQUÍ!) ---
 const firebaseConfig = {
-  apiKey: 'AIzaSyDZa4uoO24GWvcxLh0MVxfPt2l0hNBn4yI',
-  authDomain: 'midasbets-app.firebaseapp.com',
-  projectId: 'midasbets-app',
-  storageBucket: 'midasbets-app.firebasestorage.app',
-  messagingSenderId: '359773148824',
-  appId: '1:359773148824:web:aca2e50d206d82779262ed',
+  apiKey: "AIzaSyC5-qh9m9P1sVy6bMnNGPY9e6SmvOfAsF0",
+  authDomain: "midas-usa-66b2c.firebaseapp.com",
+  projectId: "midas-usa-66b2c",
+  storageBucket: "midas-usa-66b2c.firebasestorage.app",
+  messagingSenderId: "112896246382",
+  appId: "1:112896246382:web:b90932ecd679c9288d5c7f"
 };
 
 // --- NO TOCAR NADA DEBAJO DE ESTA LÍNEA ---
