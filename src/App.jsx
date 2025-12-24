@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Trophy,
-  TrendingUp,
-  Zap,
-  Target,
-  ShieldCheck,
-  Menu,
-  X,
-  ChevronRight,
-  DollarSign,
-  BarChart2,
+import { 
+  Trophy, 
+  TrendingUp, 
+  Zap, 
+  Target, 
+  ShieldCheck, 
+  Menu, 
+  X, 
+  ChevronRight, 
+  DollarSign, 
+  BarChart2, 
   Activity,
   Flame,
   Clock,
@@ -21,25 +21,33 @@ import {
   Save,
   CheckCircle,
   AlertCircle,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import {
-  getAuth,
-  signInAnonymously,
+import { 
+  getAuth, 
+  signInAnonymously, 
   onAuthStateChanged,
-  signInWithCustomToken,
+  signInWithCustomToken 
 } from 'firebase/auth';
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  onSnapshot,
-  deleteDoc,
-  doc,
-  query,
-  orderBy,
-  serverTimestamp,
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  serverTimestamp 
 } from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
 
 // --- ZONA DE CONFIGURACIÓN (¡VUELVE A PEGAR TUS CLAVES AQUÍ!) ---
 const firebaseConfig = {
@@ -55,6 +63,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const appId = 'midas-production';
 
 // --- COMPONENTE PRINCIPAL ---
@@ -62,19 +71,25 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-
+  
   // Estados para Datos y Auth
   const [predictions, setPredictions] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
+  
   // Estados para el Panel de Admin
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [loginError, setLoginError] = useState('');
+  
+  // Estado para el Acceso Secreto (Contador de clicks)
+  const [secretClicks, setSecretClicks] = useState(0);
 
-  // Estados para Formulario de Nuevo Pronóstico
+  // Estados para Formulario y Subida
+  const [imageFile, setImageFile] = useState(null); 
+  const [isUploading, setIsUploading] = useState(false); 
+  
   const [newBet, setNewBet] = useState({
     sport: 'Futbol',
     league: '',
@@ -84,7 +99,7 @@ const App = () => {
     confidence: 80,
     status: 'normal',
     time: '',
-    img: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800',
+    img: ''
   });
 
   // 1. INICIALIZAR AUTENTICACIÓN
@@ -93,11 +108,11 @@ const App = () => {
       try {
         await signInAnonymously(auth);
       } catch (error) {
-        console.error('Error de autenticación:', error);
+        console.error("Error de autenticación:", error);
       }
     };
     initAuth();
-
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -108,25 +123,36 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
 
+    // Intento de query ordenada
     const q = query(
-      collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions')
+      collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    // Fallback query simple
+    const simpleQ = query(
+        collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions')
     );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const preds = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setPredictions(preds.reverse());
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error leyendo pronósticos:', error);
-        setLoading(false);
-      }
-    );
+    const unsubscribe = onSnapshot(simpleQ, (snapshot) => {
+      let preds = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Ordenamiento manual por seguridad
+      preds.sort((a, b) => {
+          const timeA = a.createdAt?.seconds || 0;
+          const timeB = b.createdAt?.seconds || 0;
+          return timeB - timeA;
+      });
+
+      setPredictions(preds);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error leyendo pronósticos:", error);
+      setLoading(false);
+    });
 
     return () => unsubscribe();
   }, [user]);
@@ -140,9 +166,21 @@ const App = () => {
 
   // --- LÓGICA DEL ADMIN PANEL ---
 
+  // Función de Acceso Secreto
+  const handleSecretTrigger = () => {
+    setSecretClicks(prev => {
+      const newCount = prev + 1;
+      if (newCount >= 5) { // 5 Clicks para activar
+        setShowLoginModal(true);
+        return 0; // Reiniciar contador
+      }
+      return newCount;
+    });
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
-    if (adminPass === 'MIDAS') {
+    if (adminPass === 'MIDAS') { 
       setIsAdmin(true);
       setShowLoginModal(false);
       setAdminPass('');
@@ -152,60 +190,83 @@ const App = () => {
     }
   };
 
+  const handleFileChange = (e) => {
+      if (e.target.files[0]) {
+          setImageFile(e.target.files[0]);
+      }
+  };
+
   const handleAddBet = async (e) => {
     e.preventDefault();
     if (!user) return;
+    setIsUploading(true);
 
     try {
-      await addDoc(
-        collection(
-          db,
-          'artifacts',
-          appId,
-          'public',
-          'data',
-          'midas_predictions'
-        ),
-        {
-          ...newBet,
-          odds: parseFloat(newBet.odds),
-          confidence: parseInt(newBet.confidence),
-          createdAt: serverTimestamp(),
-        }
-      );
-      setNewBet({ ...newBet, match: '', prediction: '', league: '', odds: '' });
+      let finalImageUrl = newBet.img;
+
+      if (imageFile) {
+          try {
+             if (firebaseConfig.storageBucket.includes("PEGA_TU") || !firebaseConfig.storageBucket) {
+                 throw new Error("Falta configurar 'storageBucket' en las claves.");
+             }
+
+             const fileName = `pronosticos/${Date.now()}_${imageFile.name}`;
+             const storageRef = ref(storage, fileName);
+             
+             const snapshot = await uploadBytes(storageRef, imageFile);
+             finalImageUrl = await getDownloadURL(snapshot.ref);
+          } catch (uploadError) {
+             console.error("Fallo subida imagen:", uploadError);
+             alert(`Aviso: La imagen no se pudo subir (${uploadError.message}). Se usará una imagen por defecto.`);
+             finalImageUrl = ''; 
+          }
+      } 
+      
+      if (!finalImageUrl) {
+          finalImageUrl = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800';
+      }
+
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions'), {
+        ...newBet,
+        img: finalImageUrl,
+        odds: parseFloat(newBet.odds),
+        confidence: parseInt(newBet.confidence),
+        createdAt: serverTimestamp()
+      });
+
+      setNewBet({ ...newBet, match: '', prediction: '', league: '', odds: '', img: '' });
+      setImageFile(null);
       alert('¡Pronóstico Publicado con Éxito!');
+
     } catch (error) {
-      console.error('Error al publicar:', error);
-      alert('Error al publicar. Intenta de nuevo.');
+      console.error("Error al publicar:", error);
+      alert(`Error crítico al guardar datos: ${error.message}`);
+    } finally {
+        setIsUploading(false);
     }
   };
 
   const handleDeleteBet = async (id) => {
     if (confirm('¿Estás seguro de eliminar este pronóstico?')) {
       try {
-        await deleteDoc(
-          doc(db, 'artifacts', appId, 'public', 'data', 'midas_predictions', id)
-        );
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'midas_predictions', id));
       } catch (error) {
-        console.error('Error al eliminar:', error);
+        console.error("Error al eliminar:", error);
       }
     }
   };
 
-  const filteredPredictions =
-    activeTab === 'all'
-      ? predictions
-      : predictions.filter(
-          (p) => p.sport.toLowerCase() === activeTab.toLowerCase()
-        );
+  const filteredPredictions = activeTab === 'all' 
+    ? predictions 
+    : predictions.filter(p => p.sport.toLowerCase() === activeTab.toLowerCase());
+
 
   // --- COMPONENTES UI ---
 
   const BetCard = ({ data, isAdminMode }) => (
     <div className="group relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700 hover:border-amber-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] flex flex-col h-full">
       {isAdminMode && (
-        <button
+        <button 
           onClick={() => handleDeleteBet(data.id)}
           className="absolute top-2 right-2 z-50 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md transition-colors"
         >
@@ -215,17 +276,11 @@ const App = () => {
 
       <div className="absolute inset-0 h-32 w-full">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900 z-10" />
-        <img
-          src={
-            data.img ||
-            'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800'
-          }
-          alt={data.match}
-          className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-700"
-          onError={(e) => {
-            e.target.src =
-              'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800';
-          }}
+        <img 
+          src={data.img || "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800"} 
+          alt={data.match} 
+          className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-700" 
+          onError={(e) => {e.target.src = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800'}}
         />
       </div>
 
@@ -253,32 +308,22 @@ const App = () => {
         <div className="bg-slate-800/80 backdrop-blur rounded-xl p-4 border border-slate-700/50 mb-4 group-hover:border-amber-500/30 transition-colors">
           <div className="flex justify-between items-end mb-2">
             <div>
-              <p className="text-slate-400 text-xs uppercase font-bold">
-                Tu Apuesta
-              </p>
-              <p className="text-lg font-bold text-emerald-400">
-                {data.prediction}
-              </p>
+              <p className="text-slate-400 text-xs uppercase font-bold">Tu Apuesta</p>
+              <p className="text-lg font-bold text-emerald-400">{data.prediction}</p>
             </div>
             <div className="text-right">
-              <p className="text-slate-400 text-xs uppercase font-bold">
-                Cuota
-              </p>
-              <p className="text-2xl font-black text-white">
-                {Number(data.odds).toFixed(2)}
-              </p>
+              <p className="text-slate-400 text-xs uppercase font-bold">Cuota</p>
+              <p className="text-2xl font-black text-white">{Number(data.odds).toFixed(2)}</p>
             </div>
           </div>
-
+          
           <div className="w-full bg-slate-700 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full"
+            <div 
+              className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full" 
               style={{ width: `${data.confidence}%` }}
             />
           </div>
-          <p className="text-right text-[10px] text-amber-400 mt-1 font-bold">
-            {data.confidence}% Probabilidad
-          </p>
+          <p className="text-right text-[10px] text-amber-400 mt-1 font-bold">{data.confidence}% Probabilidad</p>
         </div>
 
         <button className="w-full bg-white text-slate-900 font-bold py-3 rounded-xl hover:bg-amber-400 transition-colors flex items-center justify-center gap-2 mt-auto">
@@ -292,52 +337,33 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-amber-500 selection:text-slate-900">
+      
       {/* NAVBAR */}
-      <nav
-        className={`fixed w-full z-50 transition-all duration-300 ${
-          scrolled
-            ? 'bg-slate-900/90 backdrop-blur-lg border-b border-slate-800'
-            : 'bg-transparent'
-        }`}
-      >
+      <nav className={`fixed w-full z-50 transition-all duration-300 ${scrolled ? 'bg-slate-900/90 backdrop-blur-lg border-b border-slate-800' : 'bg-transparent'}`}>
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+            {/* LOGO CON TRIGGER SECRETO */}
+            <div 
+              className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer active:scale-95 transition-transform select-none"
+              onClick={handleSecretTrigger}
+              title="PronosticosMIDAS"
+            >
               <Crown className="text-slate-900" size={24} strokeWidth={2.5} />
             </div>
-            {/* AQUÍ ESTÁ EL CAMBIO DE NOMBRE */}
             <span className="text-xl md:text-2xl font-black text-white tracking-tighter italic">
               Pronosticos<span className="text-amber-400">MIDAS</span>
             </span>
           </div>
 
           <div className="hidden md:flex items-center gap-8 font-medium text-sm">
-            <a
-              href="#"
-              className="text-white hover:text-amber-400 transition-colors"
-            >
-              Pronósticos
-            </a>
-            <a
-              href="#"
-              className="text-slate-400 hover:text-white transition-colors"
-            >
-              VIP
-            </a>
-
-            {!isAdmin ? (
-              <button
-                onClick={() => setShowLoginModal(true)}
-                className="px-6 py-2.5 bg-slate-800 hover:bg-amber-500 hover:text-slate-900 text-white font-bold rounded-full border border-slate-700 transition-all duration-300 flex items-center gap-2"
-              >
-                <Lock size={16} /> Admin Login
-              </button>
-            ) : (
+            <a href="#" className="text-white hover:text-amber-400 transition-colors">Pronósticos</a>
+            <a href="#" className="text-slate-400 hover:text-white transition-colors">VIP</a>
+            
+            {/* Solo mostramos controles si ya es admin, ocultamos el botón de login público */}
+            {isAdmin && (
               <div className="flex items-center gap-4">
-                <span className="text-emerald-400 text-xs font-bold uppercase border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 rounded-full">
-                  Modo Admin Activo
-                </span>
-                <button
+                 <span className="text-emerald-400 text-xs font-bold uppercase border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 rounded-full">Modo Admin Activo</span>
+                 <button 
                   onClick={() => setIsAdmin(false)}
                   className="text-slate-400 hover:text-red-400"
                 >
@@ -347,10 +373,7 @@ const App = () => {
             )}
           </div>
 
-          <button
-            className="md:hidden text-white"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-          >
+          <button className="md:hidden text-white" onClick={() => setIsMenuOpen(!isMenuOpen)}>
             {isMenuOpen ? <X /> : <Menu />}
           </button>
         </div>
@@ -360,7 +383,7 @@ const App = () => {
       {showLoginModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-700 p-8 rounded-2xl w-full max-w-md shadow-2xl relative">
-            <button
+            <button 
               onClick={() => setShowLoginModal(false)}
               className="absolute top-4 right-4 text-slate-500 hover:text-white"
             >
@@ -369,29 +392,20 @@ const App = () => {
             <h2 className="text-2xl font-black text-white mb-2 flex items-center gap-2">
               <ShieldCheck className="text-amber-500" /> Acceso Admin
             </h2>
-            <p className="text-slate-400 text-sm mb-6">
-              Introduce la clave maestra para gestionar los pronósticos.
-            </p>
-
+            <p className="text-slate-400 text-sm mb-6">Introduce la clave maestra.</p>
+            
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <input
-                  type="password"
-                  placeholder="Contraseña (Prueba: MIDAS)"
+                <input 
+                  type="password" 
+                  placeholder="Contraseña..."
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
                   value={adminPass}
                   onChange={(e) => setAdminPass(e.target.value)}
                 />
               </div>
-              {loginError && (
-                <p className="text-red-400 text-sm font-bold flex items-center gap-1">
-                  <AlertCircle size={14} /> {loginError}
-                </p>
-              )}
-              <button
-                type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 rounded-xl transition-colors"
-              >
+              {loginError && <p className="text-red-400 text-sm font-bold flex items-center gap-1"><AlertCircle size={14}/> {loginError}</p>}
+              <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-3 rounded-xl transition-colors">
                 Entrar al Panel
               </button>
             </form>
@@ -406,21 +420,14 @@ const App = () => {
             <h2 className="text-2xl font-black text-white mb-6 flex items-center gap-3">
               <Zap className="text-amber-400" /> Crear Nuevo Pronóstico
             </h2>
-
-            <form
-              onSubmit={handleAddBet}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-            >
+            
+            <form onSubmit={handleAddBet} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Deporte
-                </label>
-                <select
+                <label className="text-xs font-bold text-slate-500 uppercase">Deporte</label>
+                <select 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.sport}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, sport: e.target.value })
-                  }
+                  onChange={e => setNewBet({...newBet, sport: e.target.value})}
                 >
                   <option>Futbol</option>
                   <option>NBA</option>
@@ -429,143 +436,131 @@ const App = () => {
                   <option>MLB</option>
                 </select>
               </div>
-
+              
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Liga / Torneo
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Champions League"
+                <label className="text-xs font-bold text-slate-500 uppercase">Liga / Torneo</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Champions League" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.league}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, league: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, league: e.target.value})}
+                  required 
                 />
               </div>
 
               <div className="space-y-1 lg:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Partido (Vs)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Real Madrid vs Bayern"
+                <label className="text-xs font-bold text-slate-500 uppercase">Partido (Vs)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Real Madrid vs Bayern" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.match}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, match: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, match: e.target.value})}
+                  required 
                 />
               </div>
 
               <div className="space-y-1 lg:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Tu Predicción
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Ambos Marcan"
+                <label className="text-xs font-bold text-slate-500 uppercase">Tu Predicción</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Ambos Marcan" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold text-emerald-400"
                   value={newBet.prediction}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, prediction: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, prediction: e.target.value})}
+                  required 
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Cuota (Decimal)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="1.90"
+                <label className="text-xs font-bold text-slate-500 uppercase">Cuota (Decimal)</label>
+                <input 
+                  type="number" step="0.01" placeholder="1.90" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.odds}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, odds: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, odds: e.target.value})}
+                  required 
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Confianza %
-                </label>
-                <input
-                  type="number"
-                  max="100"
-                  min="1"
-                  placeholder="85"
+                <label className="text-xs font-bold text-slate-500 uppercase">Confianza %</label>
+                <input 
+                  type="number" max="100" min="1" placeholder="85" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.confidence}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, confidence: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, confidence: e.target.value})}
+                  required 
                 />
               </div>
-
+              
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Hora
-                </label>
-                <input
-                  type="text"
-                  placeholder="20:00 PM"
+                <label className="text-xs font-bold text-slate-500 uppercase">Hora</label>
+                <input 
+                  type="text" placeholder="20:00 PM" 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.time}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, time: e.target.value })
-                  }
-                  required
+                  onChange={e => setNewBet({...newBet, time: e.target.value})}
+                  required 
                 />
               </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Estado
-                </label>
-                <select
+              
+               <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Estado</label>
+                <select 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white"
                   value={newBet.status}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, status: e.target.value })
-                  }
+                  onChange={e => setNewBet({...newBet, status: e.target.value})}
                 >
                   <option value="normal">Normal</option>
                   <option value="hot">HOT PICK 🔥</option>
                 </select>
               </div>
 
+              {/* SECCIÓN DE IMAGEN MEJORADA */}
               <div className="space-y-1 lg:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  URL Imagen (Opcional)
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                  <ImageIcon size={14} /> Imagen del Partido
                 </label>
-                <input
-                  type="text"
-                  placeholder="https://..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-400 text-sm"
-                  value={newBet.img}
-                  onChange={(e) =>
-                    setNewBet({ ...newBet, img: e.target.value })
-                  }
-                />
+                
+                <div className="flex gap-2">
+                  <div className="relative w-full">
+                     <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <div className={`w-full bg-slate-800 border ${imageFile ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-400'} border-dashed rounded-lg px-3 py-2 text-sm flex items-center justify-center gap-2 hover:bg-slate-700 transition-colors`}>
+                      <Upload size={16} />
+                      {imageFile ? `Archivo: ${imageFile.name}` : 'Clic para Cargar Imagen (800x400px)'}
+                    </div>
+                  </div>
+                </div>
+                
+                {!imageFile && (
+                  <input 
+                    type="text" 
+                    placeholder="O pega una URL directa..." 
+                    className="w-full mt-2 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-slate-500 text-xs"
+                    value={newBet.img}
+                    onChange={e => setNewBet({...newBet, img: e.target.value})}
+                  />
+                )}
               </div>
 
               <div className="lg:col-span-4 mt-4">
-                <button
-                  type="submit"
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all"
+                <button 
+                  type="submit" 
+                  disabled={isUploading}
+                  className={`w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
                 >
-                  <Save size={20} /> PUBLICAR PRONÓSTICO
+                  {isUploading ? (
+                    <>Subiendo Imagen... <div className="animate-spin h-4 w-4 border-2 border-slate-900 border-t-transparent rounded-full"></div></>
+                  ) : (
+                    <><Save size={20} /> PUBLICAR PRONÓSTICO</>
+                  )}
                 </button>
               </div>
             </form>
@@ -581,8 +576,7 @@ const App = () => {
 
           <div className="container mx-auto px-6 text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800/50 border border-slate-700 text-amber-400 text-sm font-bold mb-8 animate-bounce">
-              <Zap size={16} fill="currentColor" /> ¡El Toque de Midas: 8
-              aciertos seguidos!
+              <Zap size={16} fill="currentColor" /> ¡El Toque de Midas: 8 aciertos seguidos!
             </div>
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white mb-6 leading-tight tracking-tight">
               DOMINA EL MUNDO DE <br />
@@ -591,10 +585,9 @@ const App = () => {
               </span>
             </h1>
             <p className="text-slate-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-              Convierte tus picks en oro con nuestra inteligencia artificial y
-              análisis de élite. Deja de apostar, empieza a invertir.
+              Convierte tus picks en oro con nuestra inteligencia artificial y análisis de élite. Deja de apostar, empieza a invertir.
             </p>
-            <div className="flex flex-col md:flex-row gap-4 justify-center">
+             <div className="flex flex-col md:flex-row gap-4 justify-center">
               <button className="px-8 py-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-lg rounded-full shadow-[0_0_30px_rgba(245,158,11,0.4)] hover:shadow-[0_0_50px_rgba(245,158,11,0.6)] transition-all duration-300 flex items-center justify-center gap-2">
                 <Target size={20} /> Ver Pronósticos
               </button>
@@ -612,12 +605,10 @@ const App = () => {
                 <BarChart2 className="text-amber-400" /> Picks Destacados
               </h2>
               <p className="text-slate-400">
-                {loading
-                  ? 'Cargando datos en vivo...'
-                  : 'Seleccionados por nuestro algoritmo "Midas AI"'}
+                {loading ? 'Cargando datos en vivo...' : 'Seleccionados por nuestro algoritmo "Midas AI"'}
               </p>
             </div>
-
+            
             <div className="flex flex-wrap gap-2">
               {['All', 'Futbol', 'NBA', 'Tenis', 'UFC'].map((tab) => (
                 <button
@@ -636,22 +627,16 @@ const App = () => {
           </div>
 
           {loading ? (
-            <div className="text-center py-20">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4"></div>
-              <p className="text-slate-500">Conectando con el servidor...</p>
-            </div>
+             <div className="text-center py-20">
+               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4"></div>
+               <p className="text-slate-500">Conectando con el servidor...</p>
+             </div>
           ) : predictions.length === 0 ? (
-            <div className="text-center py-20 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
-              <Trophy size={48} className="mx-auto text-slate-600 mb-4" />
-              <p className="text-slate-400 font-bold">
-                No hay pronósticos activos hoy.
-              </p>
-              {isAdmin && (
-                <p className="text-amber-500 text-sm mt-2">
-                  ¡Usa el panel arriba para crear el primero!
-                </p>
-              )}
-            </div>
+             <div className="text-center py-20 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
+               <Trophy size={48} className="mx-auto text-slate-600 mb-4" />
+               <p className="text-slate-400 font-bold">No hay pronósticos activos hoy.</p>
+               {isAdmin && <p className="text-amber-500 text-sm mt-2">¡Usa el panel arriba para crear el primero!</p>}
+             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredPredictions.map((pred) => (
@@ -668,12 +653,8 @@ const App = () => {
           <div className="text-center md:text-left text-slate-600 text-sm flex flex-col md:flex-row justify-between">
             <p>© 2024 Pronosticos Midas Inc. Todos los derechos reservados.</p>
             <div className="flex gap-6 mt-4 md:mt-0 justify-center">
-              <a href="#" className="hover:text-slate-400">
-                Términos
-              </a>
-              <a href="#" className="hover:text-slate-400">
-                Privacidad
-              </a>
+              <a href="#" className="hover:text-slate-400">Términos</a>
+              <a href="#" className="hover:text-slate-400">Privacidad</a>
             </div>
           </div>
         </div>
@@ -684,6 +665,9 @@ const App = () => {
         @keyframes gradient {
           0% { background-position: 0% 50%; }
           100% { background-position: 200% 50%; }
+        }
+        .cursor-wait {
+          cursor: wait;
         }
       `}</style>
     </div>
