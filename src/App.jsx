@@ -280,12 +280,13 @@ const App = () => {
         </div>
       )}
 
-      <div className="absolute inset-0 h-32 w-full">
+      <div className="absolute inset-0 h-44 w-full"> {/* AUMENTADO A h-44 (176px) para mejor vista de 800x400 */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900 z-10" />
         <img 
           src={data.img || "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800"} 
-          alt={data.match} 
-          className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-700" 
+          alt={data.match}
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover opacity-80 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" 
           onError={(e) => {
             e.target.onerror = null; 
             e.target.src = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800'
@@ -293,13 +294,13 @@ const App = () => {
         />
       </div>
 
-      <div className="relative z-20 p-5 mt-16 flex-grow flex flex-col">
+      <div className="relative z-20 p-5 mt-28 flex-grow flex flex-col"> {/* Aumentado mt para que baje el contenido */}
         <div className="flex justify-between items-center mb-4">
-          <span className="bg-slate-900/80 backdrop-blur-md text-amber-400 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/20 uppercase tracking-wider flex items-center gap-1">
+          <span className="bg-slate-900/90 backdrop-blur-md text-amber-400 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/20 uppercase tracking-wider flex items-center gap-1">
             {data.sport}
           </span>
           {data.status === 'hot' && (
-            <span className="flex items-center gap-1 text-xs font-bold text-red-400 bg-red-500/10 px-2 py-1 rounded-full animate-pulse">
+            <span className="flex items-center gap-1 text-xs font-bold text-red-400 bg-slate-900/90 border border-red-500/20 px-2 py-1 rounded-full animate-pulse">
               <Flame size={12} /> HOT PICK
             </span>
           )}
@@ -403,7 +404,7 @@ const App = () => {
                   value={newBet.img}
                   onChange={e => setNewBet({...newBet, img: e.target.value})}
                 />
-                <p className="text-[10px] text-slate-500">Pega aquí el enlace de la imagen. Si lo dejas vacío, se usará una por defecto.</p>
+                <p className="text-[10px] text-slate-500 text-amber-500/80 mt-1">⚠️ IMPORTANTE: Debe ser un enlace de internet (https://...), no un archivo de tu PC. Puedes subir tu imagen a <a href="https://imgur.com/upload" target="_blank" className="underline hover:text-white">Imgur.com</a> y pegar el enlace directo aquí.</p>
               </div>
 
               <div className="lg:col-span-4 mt-4 flex gap-4">{editingId && <button type="button" onClick={handleCancelEdit} className="w-1/3 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl">CANCELAR</button>}<button type="submit" className={`flex-grow bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg`}>{editingId ? <><Save size={20} /> ACTUALIZAR</> : <><Save size={20} /> PUBLICAR</>}</button></div>
