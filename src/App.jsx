@@ -51,12 +51,12 @@ import {
 
 // --- ZONA DE CONFIGURACIÓN (¡VUELVE A PEGAR TUS CLAVES AQUÍ!) ---
 const firebaseConfig = {
-  apiKey: 'AIzaSyDZa4uoO24GWvcxLh0MVxfPt2l0hNBn4yI',
-  authDomain: 'midasbets-app.firebaseapp.com',
-  projectId: 'midasbets-app',
-  storageBucket: 'midasbets-app.firebasestorage.app',
-  messagingSenderId: '359773148824',
-  appId: '1:359773148824:web:aca2e50d206d82779262ed',
+  apiKey: "PEGA_TU_API_KEY_AQUI",
+  authDomain: "midasbets-app.firebaseapp.com",
+  projectId: "midasbets-app",
+  storageBucket: "midasbets-app.firebasestorage.app", 
+  messagingSenderId: "PEGA_TU_SENDER_ID_AQUI",
+  appId: "PEGA_TU_APP_ID_AQUI"
 };
 
 // --- NO TOCAR NADA DEBAJO DE ESTA LÍNEA ---
@@ -82,9 +82,6 @@ const App = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [loginError, setLoginError] = useState('');
-  
-  // Estado para el Acceso Secreto (Contador de clicks)
-  const [secretClicks, setSecretClicks] = useState(0);
 
   // Estados para Formulario y Subida
   const [imageFile, setImageFile] = useState(null); 
@@ -119,17 +116,19 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. ESCUCHAR DATOS DE FIREBASE
+  // 2. DETECTOR DE URL SECRETA (ADMIN)
+  useEffect(() => {
+    // Verificamos si la ruta actual es la secreta
+    if (window.location.pathname === '/jvadminaadd') {
+      setShowLoginModal(true);
+    }
+  }, []);
+
+  // 3. ESCUCHAR DATOS DE FIREBASE
   useEffect(() => {
     if (!user) return;
 
-    // Intento de query ordenada
-    const q = query(
-      collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions'),
-      orderBy('createdAt', 'desc')
-    );
-    
-    // Fallback query simple
+    // Fallback query simple para evitar problemas de índices complejos al inicio
     const simpleQ = query(
         collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions')
     );
@@ -140,7 +139,7 @@ const App = () => {
         ...doc.data()
       }));
       
-      // Ordenamiento manual por seguridad
+      // Ordenamiento manual por seguridad (más nuevo primero)
       preds.sort((a, b) => {
           const timeA = a.createdAt?.seconds || 0;
           const timeB = b.createdAt?.seconds || 0;
@@ -166,18 +165,6 @@ const App = () => {
 
   // --- LÓGICA DEL ADMIN PANEL ---
 
-  // Función de Acceso Secreto
-  const handleSecretTrigger = () => {
-    setSecretClicks(prev => {
-      const newCount = prev + 1;
-      if (newCount >= 5) { // 5 Clicks para activar
-        setShowLoginModal(true);
-        return 0; // Reiniciar contador
-      }
-      return newCount;
-    });
-  };
-
   const handleLogin = (e) => {
     e.preventDefault();
     if (adminPass === 'MIDAS') { 
@@ -185,6 +172,8 @@ const App = () => {
       setShowLoginModal(false);
       setAdminPass('');
       setLoginError('');
+      // Opcional: Limpiar la URL para que no quede visible
+      // window.history.pushState({}, '', '/'); 
     } else {
       setLoginError('Acceso Denegado. Contraseña incorrecta.');
     }
@@ -341,19 +330,16 @@ const App = () => {
       {/* NAVBAR */}
       <nav className={`fixed w-full z-50 transition-all duration-300 ${scrolled ? 'bg-slate-900/90 backdrop-blur-lg border-b border-slate-800' : 'bg-transparent'}`}>
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {/* LOGO CON TRIGGER SECRETO */}
-            <div 
-              className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)] cursor-pointer active:scale-95 transition-transform select-none"
-              onClick={handleSecretTrigger}
-              title="PronosticosMIDAS"
-            >
+          
+          {/* LOGO CON ENLACE AL HOME (ACTUALIZAR) */}
+          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)]">
               <Crown className="text-slate-900" size={24} strokeWidth={2.5} />
             </div>
             <span className="text-xl md:text-2xl font-black text-white tracking-tighter italic">
               Pronosticos<span className="text-amber-400">MIDAS</span>
             </span>
-          </div>
+          </a>
 
           <div className="hidden md:flex items-center gap-8 font-medium text-sm">
             <a href="#" className="text-white hover:text-amber-400 transition-colors">Pronósticos</a>
