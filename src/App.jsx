@@ -280,7 +280,8 @@ const App = () => {
         </div>
       )}
 
-      <div className="absolute inset-0 h-44 w-full"> {/* AUMENTADO A h-44 (176px) para mejor vista de 800x400 */}
+      {/* Ajuste de altura de imagen a h-40 (160px) para que no se vea tan grande */}
+      <div className="absolute inset-0 h-40 w-full"> 
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900 z-10" />
         <img 
           src={data.img || "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800"} 
@@ -294,7 +295,8 @@ const App = () => {
         />
       </div>
 
-      <div className="relative z-20 p-5 mt-28 flex-grow flex flex-col"> {/* Aumentado mt para que baje el contenido */}
+      {/* Ajuste de margen superior a mt-24 para compensar la nueva altura de imagen */}
+      <div className="relative z-20 p-5 mt-24 flex-grow flex flex-col"> 
         <div className="flex justify-between items-center mb-4">
           <span className="bg-slate-900/90 backdrop-blur-md text-amber-400 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/20 uppercase tracking-wider flex items-center gap-1">
             {data.sport}
@@ -429,7 +431,7 @@ const App = () => {
       <section className="py-20 bg-slate-900 relative">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
-            <div><h2 className="text-3xl md:text-4xl font-black text-white mb-2 flex items-center gap-3"><BarChart2 className="text-amber-400" /> Picks Destacados</h2><p className="text-slate-400">{loading ? 'Cargando...' : 'Seleccionados por "Midas AI"'}</p></div>
+            <div><h2 className="text-3xl md:text-4xl font-black text-white mb-2 flex items-center gap-3"><BarChart2 className="text-amber-400" /> Picks Destacados</h2><p className="text-slate-400">{loading && 'Cargando...'}</p></div>
             <div className="flex flex-wrap gap-2">{['All', 'Futbol', 'NBA', 'Tenis', 'UFC'].map((tab) => (<button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-2 rounded-full font-bold text-sm transition-all ${activeTab.toLowerCase() === tab.toLowerCase() ? 'bg-white text-slate-900 shadow-[0_0_20px_rgba(255,255,255,0.3)]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}>{tab}</button>))}</div>
           </div>
           {loading ? (<div className="text-center py-20"><div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mb-4"></div><p className="text-slate-500">Conectando...</p></div>) : predictions.length === 0 ? (<div className="text-center py-20 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700"><Trophy size={48} className="mx-auto text-slate-600 mb-4" /><p className="text-slate-400 font-bold">No hay pronósticos activos.</p></div>) : (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{filteredPredictions.map((pred) => (<BetCard key={pred.id} data={pred} isAdminMode={isAdmin} />))}</div>)}
