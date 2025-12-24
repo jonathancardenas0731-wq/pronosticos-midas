@@ -22,7 +22,8 @@ import {
   CheckCircle,
   AlertCircle,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Pencil // Nuevo icono para editar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -35,6 +36,7 @@ import {
   getFirestore, 
   collection, 
   addDoc, 
+  updateDoc, // Necesario para editar
   onSnapshot, 
   deleteDoc, 
   doc, 
@@ -82,6 +84,9 @@ const App = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [loginError, setLoginError] = useState('');
+  
+  // Estado para Edición
+  const [editingId, setEditingId] = useState(null); // ID del pronóstico que se está editando
 
   // Estados para Formulario y Subida
   const [imageFile, setImageFile] = useState(null); 
@@ -98,6 +103,20 @@ const App = () => {
     time: '',
     img: ''
   });
+
+  // 0. CAMBIAR TÍTULO Y FAVICON DE LA PESTAÑA
+  useEffect(() => {
+    // Cambiar Título
+    document.title = "PronosticosMIDAS";
+    
+    // Cambiar Favicon a una Corona
+    const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+    link.type = 'image/svg+xml';
+    link.rel = 'icon';
+    // Usamos un SVG data URI de una corona
+    link.href = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👑</text></svg>";
+    document.getElementsByTagName('head')[0].appendChild(link);
+  }, []);
 
   // 1. INICIALIZAR AUTENTICACIÓN
   useEffect(() => {
@@ -116,10 +135,8 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. DETECTOR DE URL SECRETA (ADMIN) - ACTUALIZADO
+  // 2. DETECTOR DE URL SECRETA (ADMIN)
   useEffect(() => {
-    // Usamos URLSearchParams para detectar ?access=jvadminaadd
-    // Esto funciona en cualquier servidor sin configuración extra
     const params = new URLSearchParams(window.location.search);
     if (params.get('access') === 'jvadminaadd') {
       setShowLoginModal(true);
@@ -130,7 +147,6 @@ const App = () => {
   useEffect(() => {
     if (!user) return;
 
-    // Fallback query simple para evitar problemas de índices complejos al inicio
     const simpleQ = query(
         collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions')
     );
@@ -141,7 +157,6 @@ const App = () => {
         ...doc.data()
       }));
       
-      // Ordenamiento manual por seguridad (más nuevo primero)
       preds.sort((a, b) => {
           const timeA = a.createdAt?.seconds || 0;
           const timeB = b.createdAt?.seconds || 0;
@@ -175,7 +190,6 @@ const App = () => {
       setAdminPass('');
       setLoginError('');
       
-      // LIMPIEZA DE URL: Quitamos el ?access=... para ocultar el rastro
       const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.pushState({path:newUrl},'',newUrl);
       
@@ -190,6 +204,41 @@ const App = () => {
       }
   };
 
+  // Función para preparar la edición
+  const handleEditBet = (bet) => {
+    setNewBet({
+      sport: bet.sport,
+      league: bet.league,
+      match: bet.match,
+      prediction: bet.prediction,
+      odds: bet.odds,
+      confidence: bet.confidence,
+      status: bet.status,
+      time: bet.time,
+      img: bet.img || ''
+    });
+    setEditingId(bet.id);
+    setImageFile(null); // Reseteamos archivo nuevo, mantenemos URL anterior en newBet.img
+    // Scroll suave hacia el formulario
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setNewBet({
+      sport: 'Futbol',
+      league: '',
+      match: '',
+      prediction: '',
+      odds: '',
+      confidence: 80,
+      status: 'normal',
+      time: '',
+      img: ''
+    });
+    setEditingId(null);
+    setImageFile(null);
+  };
+
   const handleAddBet = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -198,6 +247,7 @@ const App = () => {
     try {
       let finalImageUrl = newBet.img;
 
+      // Si se seleccionó una imagen NUEVA, la subimos
       if (imageFile) {
           try {
              if (firebaseConfig.storageBucket.includes("PEGA_TU") || !firebaseConfig.storageBucket) {
@@ -212,28 +262,41 @@ const App = () => {
           } catch (uploadError) {
              console.error("Fallo subida imagen:", uploadError);
              alert(`Aviso: La imagen no se pudo subir (${uploadError.message}). Se usará una imagen por defecto.`);
-             finalImageUrl = ''; 
+             // Si falló la subida y no estamos editando (o no tenía imagen previa), poner default
+             if (!editingId && !finalImageUrl) finalImageUrl = ''; 
           }
       } 
       
+      // Si no hay URL final y no estamos editando (o borraron la anterior), poner default
       if (!finalImageUrl) {
           finalImageUrl = 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=800';
       }
 
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions'), {
+      const betData = {
         ...newBet,
         img: finalImageUrl,
         odds: parseFloat(newBet.odds),
         confidence: parseInt(newBet.confidence),
-        createdAt: serverTimestamp()
-      });
+        // Si es nuevo, ponemos fecha de creación. Si es update, actualizamos fecha update.
+        updatedAt: serverTimestamp()
+      };
 
-      setNewBet({ ...newBet, match: '', prediction: '', league: '', odds: '', img: '' });
-      setImageFile(null);
-      alert('¡Pronóstico Publicado con Éxito!');
+      if (editingId) {
+        // ACTUALIZAR
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'midas_predictions', editingId), betData);
+        alert('¡Pronóstico Actualizado con Éxito!');
+      } else {
+        // CREAR
+        betData.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'midas_predictions'), betData);
+        alert('¡Pronóstico Publicado con Éxito!');
+      }
+
+      // Limpieza
+      handleCancelEdit(); // Resetea form y modo edición
 
     } catch (error) {
-      console.error("Error al publicar:", error);
+      console.error("Error al guardar:", error);
       alert(`Error crítico al guardar datos: ${error.message}`);
     } finally {
         setIsUploading(false);
@@ -244,6 +307,8 @@ const App = () => {
     if (confirm('¿Estás seguro de eliminar este pronóstico?')) {
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'midas_predictions', id));
+        // Si estamos editando el que borramos, cancelar edición
+        if (editingId === id) handleCancelEdit();
       } catch (error) {
         console.error("Error al eliminar:", error);
       }
@@ -260,12 +325,24 @@ const App = () => {
   const BetCard = ({ data, isAdminMode }) => (
     <div className="group relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700 hover:border-amber-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] flex flex-col h-full">
       {isAdminMode && (
-        <button 
-          onClick={() => handleDeleteBet(data.id)}
-          className="absolute top-2 right-2 z-50 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md transition-colors"
-        >
-          <Trash2 size={16} />
-        </button>
+        <div className="absolute top-2 right-2 z-50 flex gap-2">
+          {/* Botón Editar */}
+          <button 
+            onClick={() => handleEditBet(data)}
+            className="bg-blue-500/80 hover:bg-blue-600 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+            title="Editar Pronóstico"
+          >
+            <Pencil size={16} />
+          </button>
+          {/* Botón Eliminar */}
+          <button 
+            onClick={() => handleDeleteBet(data.id)}
+            className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+            title="Eliminar Pronóstico"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       )}
 
       <div className="absolute inset-0 h-32 w-full">
@@ -336,7 +413,7 @@ const App = () => {
       <nav className={`fixed w-full z-50 transition-all duration-300 ${scrolled ? 'bg-slate-900/90 backdrop-blur-lg border-b border-slate-800' : 'bg-transparent'}`}>
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
           
-          {/* LOGO CON ENLACE AL HOME (RECARGA LA PÁGINA) */}
+          {/* LOGO CON ENLACE AL HOME */}
           <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)]">
               <Crown className="text-slate-900" size={24} strokeWidth={2.5} />
@@ -350,7 +427,6 @@ const App = () => {
             <a href="#" className="text-white hover:text-amber-400 transition-colors">Pronósticos</a>
             <a href="#" className="text-slate-400 hover:text-white transition-colors">VIP</a>
             
-            {/* Solo mostramos controles si ya es admin, ocultamos el botón de login público */}
             {isAdmin && (
               <div className="flex items-center gap-4">
                  <span className="text-emerald-400 text-xs font-bold uppercase border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 rounded-full">Modo Admin Activo</span>
@@ -404,15 +480,17 @@ const App = () => {
         </div>
       )}
 
-      {/* ADMIN DASHBOARD (Solo visible si isAdmin = true) */}
+      {/* ADMIN DASHBOARD */}
       {isAdmin && (
         <section className="pt-32 pb-10 container mx-auto px-6">
-          <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(245,158,11,0.1)]">
+          <div className={`border rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(245,158,11,0.1)] transition-colors ${editingId ? 'bg-slate-900/90 border-blue-500/50' : 'bg-slate-900 border-amber-500/30'}`}>
             <h2 className="text-2xl font-black text-white mb-6 flex items-center gap-3">
-              <Zap className="text-amber-400" /> Crear Nuevo Pronóstico
+              {editingId ? <Pencil className="text-blue-400" /> : <Zap className="text-amber-400" />} 
+              {editingId ? 'Editar Pronóstico Existente' : 'Crear Nuevo Pronóstico'}
             </h2>
             
             <form onSubmit={handleAddBet} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Form fields... */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase">Deporte</label>
                 <select 
@@ -509,10 +587,10 @@ const App = () => {
                 </select>
               </div>
 
-              {/* SECCIÓN DE IMAGEN MEJORADA */}
+              {/* SECCIÓN DE IMAGEN */}
               <div className="space-y-1 lg:col-span-2">
                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                  <ImageIcon size={14} /> Imagen del Partido
+                  <ImageIcon size={14} /> {editingId ? 'Cambiar Imagen (Opcional)' : 'Imagen del Partido'}
                 </label>
                 
                 <div className="flex gap-2">
@@ -525,10 +603,15 @@ const App = () => {
                     />
                     <div className={`w-full bg-slate-800 border ${imageFile ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-400'} border-dashed rounded-lg px-3 py-2 text-sm flex items-center justify-center gap-2 hover:bg-slate-700 transition-colors`}>
                       <Upload size={16} />
-                      {imageFile ? `Archivo: ${imageFile.name}` : 'Clic para Cargar Imagen (800x400px)'}
+                      {imageFile ? `Archivo: ${imageFile.name}` : (editingId ? 'Subir Nueva Imagen' : 'Clic para Cargar Imagen')}
                     </div>
                   </div>
                 </div>
+                
+                {/* Preview de imagen actual si estamos editando y no hay archivo nuevo */}
+                {editingId && !imageFile && newBet.img && (
+                    <p className="text-[10px] text-slate-500 mt-1 truncate">Actual: {newBet.img}</p>
+                )}
                 
                 {!imageFile && (
                   <input 
@@ -541,16 +624,26 @@ const App = () => {
                 )}
               </div>
 
-              <div className="lg:col-span-4 mt-4">
+              <div className="lg:col-span-4 mt-4 flex gap-4">
+                {editingId && (
+                  <button 
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="w-1/3 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-all"
+                  >
+                    CANCELAR
+                  </button>
+                )}
+                
                 <button 
                   type="submit" 
                   disabled={isUploading}
-                  className={`w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+                  className={`flex-grow bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
                 >
                   {isUploading ? (
-                    <>Subiendo Imagen... <div className="animate-spin h-4 w-4 border-2 border-slate-900 border-t-transparent rounded-full"></div></>
+                    <>Subiendo... <div className="animate-spin h-4 w-4 border-2 border-slate-900 border-t-transparent rounded-full"></div></>
                   ) : (
-                    <><Save size={20} /> PUBLICAR PRONÓSTICO</>
+                    editingId ? <><Save size={20} /> ACTUALIZAR PRONÓSTICO</> : <><Save size={20} /> PUBLICAR PRONÓSTICO</>
                   )}
                 </button>
               </div>
