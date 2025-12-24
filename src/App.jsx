@@ -242,6 +242,13 @@ const App = () => {
   const handleAddBet = async (e) => {
     e.preventDefault();
     if (!user) return;
+
+    // VALIDACIÓN DE TAMAÑO (Max 3MB)
+    if (imageFile && imageFile.size > 3 * 1024 * 1024) {
+        alert("La imagen es demasiado pesada (Máx 3MB). Por favor sube una más ligera o comprimida.");
+        return;
+    }
+
     setIsUploading(true);
 
     try {
@@ -251,17 +258,25 @@ const App = () => {
       if (imageFile) {
           try {
              if (firebaseConfig.storageBucket.includes("PEGA_TU") || !firebaseConfig.storageBucket) {
-                 throw new Error("Falta configurar 'storageBucket' en las claves.");
+                 throw new Error("Falta configurar 'storageBucket' en las claves de Firebase.");
              }
 
              const fileName = `pronosticos/${Date.now()}_${imageFile.name}`;
              const storageRef = ref(storage, fileName);
              
-             const snapshot = await uploadBytes(storageRef, imageFile);
+             // Timeout de 20 segundos para evitar que se quede pegado
+             const uploadPromise = uploadBytes(storageRef, imageFile);
+             const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("La subida tardó demasiado. Verifica tu conexión o que el 'storageBucket' sea el correcto.")), 20000)
+             );
+
+             // Intentamos subir con carrera contra el reloj
+             const snapshot = await Promise.race([uploadPromise, timeoutPromise]);
              finalImageUrl = await getDownloadURL(snapshot.ref);
+
           } catch (uploadError) {
              console.error("Fallo subida imagen:", uploadError);
-             alert(`Aviso: La imagen no se pudo subir (${uploadError.message}). Se usará una imagen por defecto.`);
+             alert(`Aviso: No se pudo subir la imagen (${uploadError.message}). Se publicará con la imagen por defecto.`);
              // Si falló la subida y no estamos editando (o no tenía imagen previa), poner default
              if (!editingId && !finalImageUrl) finalImageUrl = ''; 
           }
