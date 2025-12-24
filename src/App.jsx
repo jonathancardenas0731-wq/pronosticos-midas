@@ -116,10 +116,12 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. DETECTOR DE URL SECRETA (ADMIN)
+  // 2. DETECTOR DE URL SECRETA (ADMIN) - ACTUALIZADO
   useEffect(() => {
-    // Verificamos si la ruta actual es la secreta
-    if (window.location.pathname === '/jvadminaadd') {
+    // Usamos URLSearchParams para detectar ?access=jvadminaadd
+    // Esto funciona en cualquier servidor sin configuración extra
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('access') === 'jvadminaadd') {
       setShowLoginModal(true);
     }
   }, []);
@@ -167,13 +169,16 @@ const App = () => {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (adminPass === 'K9#mP2$xL7@vQ4!z') { 
+    if (adminPass === 'MIDAS') { 
       setIsAdmin(true);
       setShowLoginModal(false);
       setAdminPass('');
       setLoginError('');
-      // Opcional: Limpiar la URL para que no quede visible
-      // window.history.pushState({}, '', '/'); 
+      
+      // LIMPIEZA DE URL: Quitamos el ?access=... para ocultar el rastro
+      const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.pushState({path:newUrl},'',newUrl);
+      
     } else {
       setLoginError('Acceso Denegado. Contraseña incorrecta.');
     }
@@ -331,7 +336,7 @@ const App = () => {
       <nav className={`fixed w-full z-50 transition-all duration-300 ${scrolled ? 'bg-slate-900/90 backdrop-blur-lg border-b border-slate-800' : 'bg-transparent'}`}>
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
           
-          {/* LOGO CON ENLACE AL HOME (ACTUALIZAR) */}
+          {/* LOGO CON ENLACE AL HOME (RECARGA LA PÁGINA) */}
           <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)]">
               <Crown className="text-slate-900" size={24} strokeWidth={2.5} />
